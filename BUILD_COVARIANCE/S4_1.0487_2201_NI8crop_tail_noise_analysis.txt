@@ -1,0 +1,8 @@
+Tail Noise Analysis
+  Tail noisy: YES
+  Total tail bins: 12
+  Flagged tail bins: 1
+  Tail noise fraction: 0.083333333333
+  Max relative fluctuation: 11.398378417729
+  Min mean samples: 2.800000000000
+  Recommended max radius: 3440.446180639221

@@ -1,0 +1,21 @@
+Exponential Fit Quality
+  Model type: nested fully anisotropic exponential
+  Sill: 0.951543147986
+  Legacy X correlation length: 226.795288734777
+  Legacy Y correlation length: 280.475660185188
+  Legacy Z correlation length: 250.738274183195
+  Component 1 weight: 0.950000000000
+  Component 1 X/Y/Z lengths: 68.038586620433 84.142698055556 75.221482254959
+  Component 2 weight: 0.050000000000
+  Component 2 X/Y/Z lengths: 226.795288734777 280.475660185188 250.738274183195
+  RMS error: 0.062489118238
+  Weighted RMS error: 0.032800072876
+  Directional RMS x/y/z: 0.038724925424 0.033199116419 0.025631622973
+  Small-lag RMS error: 0.050672119098
+  Recommended-radius RMS error: 0.062489118238
+  AIC: -481906.819141907385
+  BIC: -481831.838759242615
+  Fit sample count: 76
+  Fit valid: YES
+  Zero-lag relative error: 0.000000000000
+  RMS error ratio: 0.034470399945

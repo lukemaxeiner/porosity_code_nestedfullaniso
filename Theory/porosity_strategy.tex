@@ -1,0 +1,584 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{bm}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\title{My tryst with consistent stochastic modeling}
+\author{Codex guided by Poovathingal}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Big picture goal}
+At a high-level, given a relationship between material properties and structure descriptors, and a way to sample the
+structure descriptors, the problem is solved. The trivial solution to this problem are uniform bulk quantities. Given a single porosity, 
+and analytical relationships between porosity and conductivity/permeability, obtaining the field of primitive variables is trivial. 
+
+
+However, analytical expressions do not apply to our materials of interest. While higher order geometric descriptors such as fabric tensors could be used to generalize the 
+property-structure relations, currently, based on analysis of permeability data, we can develop polynomial relationships that connect material property to porosity and a length scale. 
+
+For stochastic modeling, the problem then reduces down to: {\it How do we sample porosity?} We will begin with generating a continuous co-variance function for porosity from the XRCT data. 
+
+\section{Purpose}
+This note describes the current computational strategy implemented in the
+\texttt{porosity\_code} directory. The objective is to:
+\begin{enumerate}[label=\arabic*.]
+\item compute porosity from binarized TIFF stacks,
+\item construct a spatial covariance description of the porosity field,
+\item fit a parametric covariance model, and
+\item generate continuous porosity realizations on a user-specified simulation grid.
+\end{enumerate}
+
+The writeup is organized around the same sequence used in the code. It is meant
+to document both the mathematical intent and the practical approximations that
+are currently being used.
+
+\section{Block-Scale Permeability Interpretation}
+First, let's talk about material properties. 
+
+
+The permeability model
+\[
+K = K(\phi,L)
+\]
+should be interpreted at the block scale, not at the voxel scale, when the
+training permeability data was obtained by cutting chunks of different lengths
+from the original TIFF stacks.
+
+In that case, the training data is naturally understood as relating:
+\begin{itemize}
+\item the porosity of a finite chunk,
+\item the physical chunk length \(L\),
+\item the permeability assigned to that chunk.
+\end{itemize}
+
+Thus the intended use of the permeability model is:
+\[
+K_B = K(\phi_B, L_B),
+\]
+where:
+\begin{itemize}
+\item \(B\) denotes a block or chunk,
+\item \(\phi_B\) is the porosity averaged over that block,
+\item \(L_B\) is the physical block length,
+\item \(K_B\) is the permeability associated with that block.
+\end{itemize}
+
+After generating a continuous porosity field from the covariance model, the next
+step is therefore to partition the realization into blocks, compute the average
+porosity in each block, and then evaluate the permeability model on each block.
+
+If the porosity realization is denoted by \(\phi(\bm{x})\), then for each block
+\(B_j\) one computes:
+\[
+\phi_j
+=
+\frac{1}{|B_j|}
+\int_{B_j}\phi(\bm{x})\,d\bm{x},
+\]
+or its discrete voxel-average equivalent. The permeability assigned to that block
+is then:
+\[
+K_j = K(\phi_j, L_j).
+\]
+
+This produces a blockwise permeability field rather than a voxelwise
+permeability field. The stochastic flow workflow is therefore:
+\begin{enumerate}[label=\arabic*.]
+\item generate a porosity realization from the covariance model,
+\item divide the realization into blocks,
+\item compute average porosity in each block,
+\item evaluate \(K(\phi,L)\) for each block,
+\item assemble the resulting blockwise permeability field,
+\item solve flow through that heterogeneous medium.
+\end{enumerate}
+
+In this interpretation, the permeability model acts as a scale-dependent closure
+that converts the covariance-generated porosity field into a permeability field
+at the same physical scale used in the chunk-based permeability data.
+
+\section{Input Data and Basic Assumptions}
+The code assumes that each TIFF stack is already binarized. No grayscale
+thresholding is performed in the porosity workflow. Instead, the stack is read
+as a binary pore-solid volume.
+
+Let the voxelized structure be denoted by
+\[
+I(\bm{x}) \in \{0,1\},
+\]
+where \(\bm{x} = (x,y,z)\) is a voxel index. The current implementation treats:
+\begin{itemize}
+\item \(I(\bm{x}) = 0\) as solid,
+\item \(I(\bm{x}) = 1\) or any nonzero value as void.
+\end{itemize}
+
+Thus the binary field is interpreted directly as a pore-indicator field.
+
+Two geometric quantities are supplied by the input file:
+\begin{itemize}
+\item \texttt{voxel\_resolution}: the physical size of one voxel,
+\item \texttt{filter\_resolution}: the physical size of the local averaging
+window used to construct the porosity field.
+\end{itemize}
+
+\section{Global Porosity Computation}
+\subsection{Definition}
+The global porosity is the fraction of void voxels in the entire stack:
+\[
+\phi_{\mathrm{global}}
+=
+\frac{1}{N}
+\sum_{\bm{x}} I(\bm{x}),
+\]
+where \(N\) is the total number of voxels.
+
+Since the input stack is already binary, this computation is straightforward:
+\begin{itemize}
+\item count all voxels,
+\item count all nonzero voxels,
+\item divide the second count by the first.
+\end{itemize}
+
+\subsection{Interpretation}
+This quantity gives a single scalar summary of the sample. It does not provide
+any spatial information. Two structures may have the same global porosity while
+having very different spatial organization.
+
+\section{Local Porosity Field}
+\subsection{Motivation}
+For covariance analysis and realization generation, the code does not work
+directly with the raw binary field. Instead, it first constructs a continuous
+local porosity field:
+\[
+\phi(\bm{x}),
+\]
+which measures the local void fraction in a neighborhood around \(\bm{x}\).
+
+\subsection{Window-Based Averaging}
+Let \(L\) denote the physical filter size. In the input file, this is
+\texttt{filter\_resolution}. Let \(h\) denote the physical voxel size, given by
+\texttt{voxel\_resolution}. The code converts the physical filter size into a
+window size in voxels.
+
+For a local window \(W_L(\bm{x})\) centered around \(\bm{x}\), the local
+porosity is defined as:
+\[
+\phi(\bm{x})
+=
+\frac{1}{|W_L(\bm{x})|}
+\sum_{\bm{u} \in W_L(\bm{x})} I(\bm{u}).
+\]
+
+This produces a continuous-valued field satisfying, ideally,
+\[
+0 \le \phi(\bm{x}) \le 1.
+\]
+
+\subsection{Role of the Filter Size}
+The filter size controls the scale at which porosity fluctuations are observed:
+\begin{itemize}
+\item a small filter produces a more rapidly varying field,
+\item a larger filter smooths local fluctuations and emphasizes larger-scale
+structure.
+\end{itemize}
+
+Therefore, the covariance derived from the local porosity field depends
+explicitly on the chosen filter size.
+
+\section{Covariance of the Porosity Field}
+\subsection{Mean and Variance}
+Once the local porosity field \(\phi(\bm{x})\) is available, the code computes
+its spatial mean:
+\[
+\mu = \langle \phi(\bm{x}) \rangle,
+\]
+and spatial variance:
+\[
+\sigma^2
+=
+\left\langle \left(\phi(\bm{x})-\mu\right)^2 \right\rangle.
+\]
+
+These are empirical averages over the finite voxel domain.
+
+\subsection{Finite-Sample Spatial Covariance}
+The covariance at lag \(\bm{r}\) is estimated by:
+\[
+C(\bm{r})
+=
+\frac{1}{N(\bm{r})}
+\sum_{\bm{x}\in\Omega_{\bm{r}}}
+\left(\phi(\bm{x})-\mu\right)
+\left(\phi(\bm{x}+\bm{r})-\mu\right),
+\]
+where:
+\begin{itemize}
+\item \(\Omega_{\bm{r}}\) is the set of valid positions such that both
+\(\bm{x}\) and \(\bm{x}+\bm{r}\) lie inside the domain,
+\item \(N(\bm{r})\) is the number of valid overlapping pairs at lag
+\(\bm{r}\).
+\end{itemize}
+
+This is a finite-sample covariance estimate. It is not an FFT-based covariance
+and it does not use periodic boundary conditions.
+
+\subsection{Normalized Covariance Used in the Code}
+The lag covariance implementation stores a variance-normalized version:
+\[
+\rho(\bm{r}) = \frac{C(\bm{r})}{\sigma^2}.
+\]
+Thus:
+\[
+\rho(\bm{0}) \approx 1
+\]
+when the variance is nonzero.
+
+This normalized quantity behaves like a spatial autocorrelation function. It is
+useful for comparing the covariance shape independent of variance scale.
+
+\section{3DLAG Covariance Construction}
+\subsection{Motivation}
+To support later realization generation, the code computes a full nonnegative
+lag grid in the \texttt{3DLAG} mode:
+\[
+(r_x, r_y, r_z),
+\qquad
+0 \le r_x < N_x,\;
+0 \le r_y < N_y,\;
+0 \le r_z < N_z.
+\]
+
+Each grid point corresponds to one lag vector in voxel units, later converted to
+physical units using \texttt{filter\_resolution}.
+
+\subsection{Output Interpretation}
+The 3DLAG table stores, for each lag:
+\begin{itemize}
+\item physical lag in \(x\), \(y\), and \(z\),
+\item number of valid sample pairs,
+\item mean porosity \(\mu\),
+\item normalized covariance \(\rho(\bm{r})\).
+\end{itemize}
+
+The table therefore contains the information needed to reconstruct the covariance
+field provided the variance \(\sigma^2\) is also known.
+
+\section{Covariance Reconstruction}
+\subsection{Step 1: Reconstruct the Covariance Field}
+The preparation pipeline begins by reading the 3DLAG table and reconstructing the
+unnormalized covariance:
+\[
+C(\bm{r}) = \sigma^2 \rho(\bm{r}).
+\]
+
+The mean \(\mu\) is not used in this reconstruction step because the
+mean-centering has already been applied in the original covariance calculation.
+However, \(\mu\) is carried forward because it is needed later when generating
+continuous porosity realizations.
+
+\subsection{Step 2: Symmetrize the Covariance}
+The 3DLAG table contains only the nonnegative lag octant. A full signed lag
+covariance field is needed for later spectral or large-domain operations.
+
+The current code extends the nonnegative octant by reflection:
+\[
+C(r_x,r_y,r_z) = C(|r_x|,|r_y|,|r_z|).
+\]
+
+This is stronger than the stationarity identity
+\[
+C(\bm{r}) = C(-\bm{r}),
+\]
+because it also assumes reflection symmetry independently in each coordinate
+direction. This is a practical approximation used to build a full signed grid
+from the available data.
+
+\section{Covariance Quality Checks}
+\subsection{Tail Noise Analysis}
+Finite-sample covariance estimates become less reliable at large lags because the
+number of overlapping voxel pairs decreases as lag increases. The code therefore
+analyzes the tail of the covariance field.
+
+The current strategy is:
+\begin{enumerate}[label=\arabic*.]
+\item identify the outer portion of the lag domain,
+\item bin tail samples by lag radius,
+\item compute fluctuation statistics in each bin,
+\item compare fluctuation size against local covariance magnitude and sample
+count,
+\item report whether the tail appears noisy.
+\end{enumerate}
+
+This does not prove validity or invalidity. It is a diagnostic intended to flag
+lags that may be too noisy to trust strongly during model fitting.
+
+\subsection{Negative Covariance Lobes}
+The code also checks whether the empirical covariance becomes negative at some
+lags. A negative covariance means that porosity fluctuations at the two points
+tend to move in opposite directions relative to the mean.
+
+This can be physically meaningful, for example when there is alternation or
+layering at a characteristic spacing. However, a simple monotone exponential
+covariance model cannot reproduce such oscillatory behavior. Therefore, the
+presence of strong negative lobes is a signal that the exponential model may be
+too simple.
+
+\subsection{Anisotropy Analysis}
+The code additionally examines directional behavior in order to assess whether the
+covariance decay differs along \(x\), \(y\), and \(z\). This is useful because a
+fiber-based material can be anisotropic.
+
+The current first-pass realization model is isotropic, so the anisotropy report
+acts as a warning mechanism. If the directional decay is significantly different,
+an anisotropic covariance model would be more appropriate.
+
+\section{Parametric Covariance Fitting}
+\subsection{Why a Parametric Model is Needed}
+The measured covariance is available only on a finite lag domain. If the desired
+simulation domain is larger than the measured sample, covariance values are
+needed at larger separations than those directly observed.
+
+Rather than copying or periodically repeating the empirical covariance, the code
+fits a smooth parametric model. The fitted model then serves as a covariance law
+that can be evaluated on any desired simulation grid.
+
+\textcolor{red}{Based on testing by Poovathingal, it is clear that the isotropic approach is not good. We need to consider other models.}
+
+\subsection{Current Model: Isotropic Exponential Covariance}
+The current fit uses an isotropic exponential form:
+\[
+C(r) = s \exp\left(-\frac{r}{\ell}\right),
+\]
+where:
+\begin{itemize}
+\item \(s\) is the sill,
+\item \(\ell\) is the correlation length,
+\item \(r = \|\bm{r}\|\) is the Euclidean lag magnitude.
+\end{itemize}
+
+This model is:
+\begin{itemize}
+\item positive at all lags,
+\item monotone decreasing,
+\item stationary and isotropic,
+\item mathematically convenient for random field generation.
+\end{itemize}
+
+\subsection{Fitting Strategy}
+The code currently fits the model using a log-linear least-squares approach over
+strictly positive empirical covariance values:
+\[
+\log C(r) = \log s - \frac{r}{\ell}.
+\]
+
+Thus a straight-line fit is performed in \((r,\log C)\) space, yielding:
+\[
+\text{slope} = -\frac{1}{\ell},
+\qquad
+\text{intercept} = \log s.
+\]
+
+The current implementation therefore:
+\begin{itemize}
+\item excludes nonpositive empirical covariance values,
+\item assumes the covariance is well-described by a single isotropic decay scale,
+\item produces a first-pass fit rather than a fully general model.
+\end{itemize}
+
+\subsection{Fit Validation}
+After fitting, the code validates the result by checking:
+\begin{itemize}
+\item whether the sill is positive,
+\item whether the correlation length is positive,
+\item whether enough points were used in the fit,
+\item whether the fitted sill approximately matches the zero-lag empirical
+covariance,
+\item whether the RMS fitting error is reasonably small relative to the
+zero-lag covariance scale.
+\end{itemize}
+
+This does not guarantee that the model is the best possible representation, but
+it helps reject clearly unphysical or numerically unstable fits.
+
+\section{Covariance Evaluation on the Simulation Grid}
+\subsection{Need for a Larger Simulation Grid}
+The simulation domain may be larger than the domain from which covariance was
+measured. Therefore, the fitted model must be evaluated on the user-specified
+realization grid:
+\[
+N_x \times N_y \times N_z,
+\]
+with physical dimensions:
+\[
+L_x \times L_y \times L_z.
+\]
+
+The code reads these from:
+\begin{itemize}
+\item \texttt{POROSITY\_REALIZATION\_GRID\_RES = \(N_x\ N_y\ N_z\)},
+\item \texttt{POROSITY\_REALIZATION\_GRID\_DIM = \(L_x\ L_y\ L_z\)}.
+\end{itemize}
+
+\subsection{Grid Spacing}
+The physical realization-grid spacings are:
+\[
+\Delta x = \frac{L_x}{N_x-1},
+\qquad
+\Delta y = \frac{L_y}{N_y-1},
+\qquad
+\Delta z = \frac{L_z}{N_z-1},
+\]
+for grids with more than one point in a direction.
+
+The fitted covariance model is then evaluated over the simulation grid to build a
+discrete covariance representation for realization generation.
+
+\section{Continuous Covariance Realization Generation}
+\subsection{Goal}
+The goal is to generate many continuous porosity fields
+\[
+\phi^{(k)}(\bm{x}), \qquad k=1,2,\dots,N_{\mathrm{realizations}},
+\]
+that share the same target mean and covariance model while differing by random
+draw.
+
+\subsection{Why Gaussian Random Fields}
+The current generation method uses a Gaussian random field. This is a practical
+choice because, for a Gaussian field, the mean and covariance fully specify the
+second-order statistics.
+
+Thus once a fitted covariance model \(C(\bm{r})\) and a mean porosity \(\mu\)
+are available, one can generate a zero-mean Gaussian field \(Z(\bm{x})\) with
+the target covariance and then shift it by the mean:
+\[
+\phi(\bm{x}) = \mu + Z(\bm{x}).
+\]
+
+\subsection{Current Numerical Method}
+The current implementation uses an explicit covariance matrix and Cholesky
+factorization:
+\begin{enumerate}[label=\arabic*.]
+\item build the full covariance matrix for all realization-grid points,
+\item compute its Cholesky factorization,
+\item sample a vector of independent standard normal variables,
+\item multiply by the Cholesky factor,
+\item add the mean porosity.
+\end{enumerate}
+
+Formally, if
+\[
+\bm{z} \sim \mathcal{N}(\bm{0},\bm{I}),
+\]
+and if
+\[
+\bm{K} = \bm{L}\bm{L}^T
+\]
+is the Cholesky factorization of the covariance matrix \(\bm{K}\), then the
+generated field vector is:
+\[
+\bm{\phi} = \mu \bm{1} + \bm{L}\bm{z}.
+\]
+
+\subsection{Current Practical Limitation}
+This approach is exact for small to modest grids, but it scales poorly:
+\begin{itemize}
+\item memory grows as the square of the number of grid points,
+\item factorization time grows cubically.
+\end{itemize}
+
+For that reason, the current code includes a hard point-count guard. Larger
+realization grids would eventually need a more scalable FFT-based or
+circulant-embedding-based generator.
+
+\subsection{Generated Outputs}
+The code writes realizations into a folder named
+\texttt{GENERATED\_POROSITY\_FIELDS}. For each realization, two file types are
+written:
+\begin{itemize}
+\item a TIFF stack for direct voxel-based storage,
+\item a VTK file for visualization in ParaView.
+\end{itemize}
+
+The VTK output stores the continuous porosity field on the realization grid using
+the user-specified physical dimensions and grid spacing.
+
+\section{Overall Workflow Summary}
+The full strategy implemented in the code can be summarized as follows:
+
+\subsection*{Stage A: Porosity Computation}
+\begin{enumerate}[label=\arabic*.]
+\item Read a binarized TIFF stack.
+\item Interpret zero voxels as solid and nonzero voxels as void.
+\item Compute global porosity.
+\item Compute a local porosity field using a window of physical size
+\texttt{filter\_resolution}.
+\end{enumerate}
+
+\subsection*{Stage B: Covariance Construction}
+\begin{enumerate}[label=\arabic*.]
+\item Compute the mean and variance of the local porosity field.
+\item Estimate finite-sample spatial covariance over valid overlapping pairs.
+\item Store the normalized covariance in \texttt{3DLAG} mode.
+\item Write tabular and ParaView-readable covariance outputs.
+\end{enumerate}
+
+\subsection*{Stage C: Covariance Preparation}
+\begin{enumerate}[label=\arabic*.]
+\item Read the 3DLAG table.
+\item Reconstruct \(C(\bm{r}) = \sigma^2 \rho(\bm{r})\).
+\item Symmetrize the covariance over a signed lag grid.
+\item Analyze tail noise, negative lobes, and anisotropy.
+\item Fit an isotropic exponential covariance model.
+\item Validate the fitted model.
+\item Evaluate the fitted covariance on the user-specified realization grid.
+\end{enumerate}
+
+\subsection*{Stage D: Covariance-Based Realization Generation}
+\begin{enumerate}[label=\arabic*.]
+\item Build the realization-grid covariance matrix from the fitted model.
+\item Factorize the matrix by Cholesky decomposition.
+\item Draw Gaussian random vectors.
+\item Generate continuous porosity realizations by applying the covariance
+factor and adding the target mean.
+\item Write each realization as a TIFF stack and a VTK file.
+\end{enumerate}
+
+\section{Current Approximations and Caveats}
+The present implementation is a good first end-to-end framework, but several
+approximations should be kept in mind:
+\begin{itemize}
+\item The covariance is estimated from a finite sample, so large-lag values are
+noisier.
+\item The nonnegative 3DLAG octant is extended by reflection symmetry, which is
+stronger than general stationarity.
+\item The current parametric fit is isotropic and exponential, so it cannot
+capture strong anisotropy or oscillatory negative covariance structure.
+\item The Gaussian realization model produces a continuous field and does not
+automatically enforce the physical bound \(0 \le \phi \le 1\).
+\item The current Cholesky-based generator is appropriate only for relatively
+small grids.
+\end{itemize}
+
+\section{Recommended Next Extensions}
+For future refinement, the following extensions would be natural:
+\begin{itemize}
+\item anisotropic covariance fitting,
+\item weighted covariance fitting using overlap-count information,
+\item bounded transforms for porosity values,
+\item FFT-based large-grid realization generation,
+\item ensemble fitting across multiple TIFF samples.
+\end{itemize}
+
+\section{Closing Remark}
+The overall strategy is to move from a measured binarized microstructure to a
+continuous stochastic porosity model. The code does this by first converting the
+raw stack into a local porosity field, then estimating its covariance, fitting a
+smooth parametric model, and finally generating new continuous fields that match
+the measured second-order statistics as closely as the current model allows.
+
+\end{document}

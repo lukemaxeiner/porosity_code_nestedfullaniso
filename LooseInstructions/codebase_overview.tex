@@ -1,0 +1,283 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{bm}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\title{FiberForm Porosity Codebase Overview}
+\author{Codebase Notes}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+This note gives a current overview of the code in
+\texttt{porosity\_code}. The present codebase supports three main covariance
+workflow stages, along with a few supporting porosity utilities:
+\begin{enumerate}[label=\arabic*.]
+\item empirical covariance construction from voxel data,
+\item covariance-model fitting,
+\item continuous porosity-field generation on a simulation domain.
+\end{enumerate}
+
+The document also records important caveats that matter when interpreting the
+outputs.
+
+\section{High-Level Workflow}
+At a high level, the code takes a binarized TIFF stack and can:
+\begin{enumerate}[label=\arabic*.]
+\item read the binary volume,
+\item compute global porosity and a blockwise porosity field,
+\item compute empirical covariance of the porosity field,
+\item fit an isotropic exponential covariance model,
+\item generate continuous Gaussian porosity realizations from the fitted model.
+\end{enumerate}
+
+The entry point is \texttt{main.c}. Input parsing is handled by
+\texttt{input.c} and \texttt{input.h}.
+
+\section{Input Structure}
+Each stack is currently supplied through an \texttt{INPUT\_DATA} entry of the
+form:
+\begin{verbatim}
+INPUT_DATA = "/path/to/stack.tif 2.0" ;
+FILTER_RESOLUTION = 50.0
+\end{verbatim}
+
+Here:
+\begin{itemize}
+\item the path points to a TIFF stack,
+\item the number in the same quoted entry is that stack's voxel resolution,
+\item \texttt{FILTER\_RESOLUTION} is shared across the run.
+\end{itemize}
+
+Multiple stacks are supported by giving multiple quoted entries in
+\texttt{INPUT\_DATA}.
+
+\section{Run Modes}
+The code now supports staged execution through explicit switches:
+\begin{verbatim}
+RUN_FULL_PIPELINE = YES|NO
+EMPIRICAL_COVARIANCE = YES|NO
+FIT_COVARIANCE_MODEL = YES|NO
+GENERATE_POROSITY_REALIZATIONS = YES|NO
+\end{verbatim}
+
+Additional utility switches still exist:
+\begin{itemize}
+\item \texttt{GLOBAL\_POROSITY}
+\item \texttt{POROSITY\_FIELD}
+\item \texttt{POROSITY\_COVARIANCE\_LAG}
+\item \texttt{POROSITY\_AXIS}
+\item \texttt{POROSITY\_COVARIANCE\_REF\_WINDOW}
+\item \texttt{REF\_WINDOW\_VALUES}
+\item \texttt{POROSITY\_REALIZATION\_COUNT}
+\item \texttt{POROSITY\_REALIZATION\_GRID\_RES}
+\item \texttt{POROSITY\_REALIZATION\_GRID\_DIM}
+\end{itemize}
+
+\section{Stage 0: TIFF Reading and Binary Interpretation}
+The TIFF reading helpers are implemented in \texttt{tiff.c}. This code:
+\begin{itemize}
+\item opens 8-bit single-channel TIFF pages,
+\item verifies that all slices in the stack have consistent dimensions,
+\item loads the full volume into memory when needed,
+\item supports both direct grayscale indices and palette TIFFs.
+\end{itemize}
+
+The binary conversion helper is \texttt{palette\_index\_to\_binary(...)}.
+
+\subsection{Important Current Convention}
+The active code path currently treats binary value \(0\) as void in the actual
+porosity counting and porosity-field construction logic.
+
+This means the live behavior is effectively:
+\[
+0 = \text{void}, \qquad \text{nonzero} = \text{solid or non-void}.
+\]
+
+This convention must be kept in mind when interpreting porosity numbers.
+
+\section{Global Porosity}
+Global porosity is handled by \texttt{porosity\_global.c}. The code:
+\begin{enumerate}[label=\arabic*.]
+\item reads the full stack statistics,
+\item counts total voxels,
+\item counts void voxels,
+\item reports porosity as
+\[
+\phi_{\mathrm{global}} = \frac{N_{\mathrm{void}}}{N_{\mathrm{total}}}.
+\]
+\end{enumerate}
+
+If more than one stack is processed in the same run, the program also prints the
+average porosity across stacks.
+
+\section{Local Porosity Field}
+Local porosity-field construction is implemented in \texttt{porosity\_field.c}.
+
+\subsection{What It Computes}
+The code converts the binary volume into a continuous-valued porosity field by
+coarse-graining the volume into blocks whose size is determined by:
+\[
+\texttt{FILTER\_RESOLUTION} / \texttt{VOXEL\_RESOLUTION}.
+\]
+
+The filter size in voxels is rounded to an odd integer. Then the code:
+\begin{enumerate}[label=\arabic*.]
+\item builds a 3D integral volume for fast block summation,
+\item partitions the domain into non-overlapping blocks,
+\item computes the void fraction in each block,
+\item writes the resulting porosity field as a floating-point TIFF stack.
+\end{enumerate}
+
+\subsection{Interpretation}
+This is a blockwise coarse-grained porosity field, not a sliding-window field.
+That distinction matters later because the covariance is the covariance of this
+coarse-grained field.
+
+\section{Stage 1: Empirical Covariance}
+Empirical covariance construction is implemented in
+\texttt{porosity\_covariance\_lag.c}.
+
+\subsection{Mathematical Form}
+Once the porosity field \(\phi(\bm{x})\) is available, the code computes its
+mean \(\mu\) and variance \(\sigma^2\), and then estimates covariance at lag
+\(\bm{r}\) by a finite-sample average over valid overlapping pairs:
+\[
+C(\bm{r}) =
+\frac{1}{N(\bm{r})}
+\sum_{\bm{x}\in\Omega_{\bm{r}}}
+(\phi(\bm{x})-\mu)(\phi(\bm{x}+\bm{r})-\mu).
+\]
+
+The implementation then normalizes that quantity by the variance:
+\[
+\rho(\bm{r}) = \frac{C(\bm{r})}{\sigma^2}.
+\]
+
+So the stored covariance table is effectively a normalized covariance or
+correlation-like quantity.
+
+\subsection{Supported Modes}
+The empirical covariance stage supports:
+\begin{itemize}
+\item \texttt{3DLAG}: the full nonnegative 3D lag grid,
+\item \texttt{CURVE}: a covariance curve along a selected axis.
+\end{itemize}
+
+\subsection{Outputs}
+Stage 1 writes outputs into a sibling folder named:
+\begin{verbatim}
+BUILD_COVARIANCE
+\end{verbatim}
+
+Typical outputs are:
+\begin{itemize}
+\item a text lag table,
+\item a VTK file for ParaView.
+\end{itemize}
+
+\section{Stage 2: Covariance Preparation and Fitting}
+This stage is implemented in \texttt{porosity\_covariance\_realization\_prep.c}
+and described by the public types in
+\texttt{porosity\_covariance\_realization\_prep.h}.
+
+\subsection{What It Does}
+This stage performs more than a bare fit. It:
+\begin{enumerate}[label=\arabic*.]
+\item reads the \texttt{3DLAG} table,
+\item reconstructs the raw covariance from the normalized covariance,
+\item symmetrizes the covariance grid,
+\item analyzes tail noise,
+\item analyzes negative covariance lobes,
+\item analyzes anisotropy,
+\item fits an isotropic exponential covariance model,
+\item validates the fit,
+\item evaluates the fitted covariance on the requested simulation grid,
+\item validates the evaluated simulation-grid covariance.
+\end{enumerate}
+
+\subsection{Model Form}
+The current fit is isotropic exponential:
+\[
+C(r) = s \exp\left(-\frac{r}{\ell}\right),
+\]
+where \(s\) is the sill and \(\ell\) is the correlation length.
+
+\subsection{Outputs}
+Stage 2 also writes into \texttt{BUILD\_COVARIANCE}. It produces:
+\begin{itemize}
+\item a tail-noise report,
+\item an exponential-fit quality report,
+\item a covariance-build summary,
+\item a fitted-model artifact file.
+\end{itemize}
+
+The fitted-model artifact is the handoff into Stage 3.
+
+\section{Stage 3: Continuous Porosity Realization Generation}
+Generation is implemented in
+\texttt{porosity\_covariance\_realization\_generation.c}.
+
+\subsection{Method}
+The current generator:
+\begin{enumerate}[label=\arabic*.]
+\item reads the fitted exponential covariance model,
+\item builds the covariance matrix on the requested simulation grid,
+\item performs Cholesky factorization,
+\item draws Gaussian random vectors,
+\item generates continuous porosity realizations,
+\item writes both TIFF and VTK outputs.
+\end{enumerate}
+
+If the fitted model is \(C(\bm{r})\), then the generated field is a Gaussian
+field whose covariance is prescribed by that model and whose mean is taken from
+the fitted-model artifact.
+
+\subsection{Outputs}
+Generated realizations are written into:
+\begin{verbatim}
+GENERATED_POROSITY_FIELDS
+\end{verbatim}
+
+Each realization is written in:
+\begin{itemize}
+\item floating-point TIFF format,
+\item VTK format for ParaView.
+\end{itemize}
+
+\section{Reference-Window Covariance Utility}
+There is also an auxiliary module,
+\texttt{porosity\_covariance\_refwindow.c}, which supports a
+reference-window-based covariance analysis. This is not the main route used by
+the current three-stage realization workflow, but it remains available as an
+additional diagnostic path.
+
+\section{Current Caveats}
+The following caveats are important:
+\begin{itemize}
+\item The current \texttt{README.md} had previously been stale relative to the
+live code and needed updating.
+\item The active porosity convention in the live code path currently behaves as
+\(0 = \text{void}\).
+\item The porosity field is block-based, not sliding-window.
+\item The fit stage is broader than pure model fitting because it also checks
+simulation-grid compatibility.
+\item The realization generator uses a full covariance matrix and Cholesky
+factorization, so it is not scalable to large grids.
+\item The covariance model currently used for generation is isotropic
+exponential only.
+\end{itemize}
+
+\section{Summary}
+In its present form, the codebase is a staged porosity-to-covariance-to-field
+pipeline. It begins with binarized TIFF stacks, computes a coarse-grained local
+porosity field, estimates empirical covariance of that field, fits an isotropic
+exponential covariance model, and finally generates continuous Gaussian porosity
+realizations on a user-defined simulation grid.
+
+\end{document}

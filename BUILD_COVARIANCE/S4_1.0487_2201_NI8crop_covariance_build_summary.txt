@@ -1,0 +1,27 @@
+Realization Prep Report
+  Lag grid: 42 x 42 x 46
+  Filter resolution: 50.000000000000
+  Variance: 0.952862886921
+  Mean: -0.009356575994
+  Tail noisy: YES
+  Tail noise fraction: 0.083333333333
+  Recommended max radius: 3440.446180639221
+  Negative lobes: YES
+  Negative count: 33504
+  Min covariance: -1.246962948456
+  X/Y/Z e-fold distances: 62.727251981636 95.939046977377 86.405013483906
+  Anisotropy ratio: 1.529463573591
+  Exponential model type: nested fully anisotropic exponential
+  Exponential sill: 0.952862886921
+  Legacy X/Y/Z correlation lengths: 226.848066440236 341.893059571308 295.010366292616
+  Exponential RMS error: 0.067767996388
+  Exponential fit valid: YES
+  Simulation grid: 44 x 44 x 48
+  Simulation dimensions: 2200.000000000000 2200.000000000000 2400.000000000000
+  Domain/correlation-length ratios: 9.698121013430 6.434760631756 8.135307345842
+  Simulation grid adequate: YES
+  Evaluated covariance grid valid: YES
+  Component 1 weight: 0.900000000000
+  Component 1 X/Y/Z lengths: 54.443535945657 82.054334297114 70.802487910228
+  Component 2 weight: 0.100000000000
+  Component 2 X/Y/Z lengths: 226.848066440236 341.893059571308 295.010366292616
