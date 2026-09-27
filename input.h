@@ -25,9 +25,9 @@ typedef struct {
     int empirical_covariance_enabled;
     int fit_covariance_model_enabled;
     int generate_porosity_realizations_enabled;
-    int normal_score_transform_enabled; //normal score transform addition
-    int validate_realization_enabled; //validate realizations yes/no
-    int validation_max_lag; //validation max lag = N; N = 0 -> Auto
+    int normal_score_transform_enabled;  /* NORMAL_SCORE_TRANSFORM = YES|NO */
+    int validate_realizations_enabled;  /* VALIDATE_REALIZATIONS = YES|NO */
+    int validation_max_lag;             /* VALIDATION_MAX_LAG = <N>, 0 = auto */
     PorosityRealizationMethod porosity_realization_method;
     double filter_resolution;
     PorosityLagMode porosity_lag_mode;

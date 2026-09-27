@@ -122,6 +122,7 @@ int main(int argc, char **argv) {
         if (config.generate_porosity_realizations_enabled) {
             FittedCovarianceModelArtifact model_artifact;
             char *model_path = build_fitted_model_path(stack->stack_path);
+            int generation_status;
 
             if (model_path == NULL) {
                 free_input(&config.input_data);
@@ -136,16 +137,41 @@ int main(int argc, char **argv) {
                 return EXIT_FAILURE;
             }
 
-            if (generate_and_write_gaussian_porosity_realizations_from_model_with_method(
-                    stack->stack_path,
-                    &model_artifact,
-                    &realization_grid,
-                    config.porosity_realization_method,
-                    (uint32_t)config.porosity_realization_count,
-                    12345U) != EXIT_SUCCESS) {
-                free(model_path);
-                free_input(&config.input_data);
-                return EXIT_FAILURE;
+            if (config.validate_realizations_enabled) {
+                PorosityValidationRequest validation = {
+                    1,
+                    config.validation_max_lag,
+                    stack->voxel_resolution,
+                    config.filter_resolution
+                };
+
+                generation_status = generate_and_write_gaussian_porosity_realizations_from_model_with_method(
+                        stack->stack_path,
+                        &model_artifact,
+                        &realization_grid,
+                        config.porosity_realization_method,
+                        (uint32_t)config.porosity_realization_count,
+                        12345U,
+                        &validation);
+                if (generation_status != EXIT_SUCCESS) {
+                    free(model_path);
+                    free_input(&config.input_data);
+                    return EXIT_FAILURE;
+                }
+            } else {
+                generation_status = generate_and_write_gaussian_porosity_realizations_from_model_with_method(
+                           stack->stack_path,
+                           &model_artifact,
+                           &realization_grid,
+                           config.porosity_realization_method,
+                           (uint32_t)config.porosity_realization_count,
+                           12345U,
+                           NULL);
+                if (generation_status != EXIT_SUCCESS) {
+                    free(model_path);
+                    free_input(&config.input_data);
+                    return EXIT_FAILURE;
+                }
             }
 
             if (fprintf(stdout,

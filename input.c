@@ -346,7 +346,7 @@ int parse_input(int argc, char **argv, RunConfig *config) {
                 "  GENERATE_POROSITY_REALIZATIONS = YES|NO\n"
                 "  POROSITY_REALIZATION_METHOD = CHOLESKY|FFT\n"
                 "  NORMAL_SCORE_TRANSFORM = YES|NO\n"
-                "  VALIDATE REALIZATIONS = YES|NO\n"
+                "  VALIDATE_REALIZATIONS = YES|NO\n"
                 "  VALIDATION_MAX_LAG = <N> (0 = automatic)\n"
                 "  GLOBAL_POROSITY = YES|NO\n"
                 "  POROSITY_FIELD = YES|NO\n"
@@ -453,7 +453,7 @@ int parse_input(int argc, char **argv, RunConfig *config) {
                     return EXIT_FAILURE;
             }
         } else if (equals_ignore_case(key, "VALIDATE_REALIZATIONS")) {
-            if (parse_yes_no(value, &config->validate_realization_enabled) !=
+            if (parse_yes_no(value, &config->validate_realizations_enabled) !=
                 EXIT_SUCCESS) {
                 fprintf(stderr,
                         "Invalid VALIDATE_REALIZATIONS value. Expected YES or NO\n");
@@ -693,7 +693,7 @@ int parse_input(int argc, char **argv, RunConfig *config) {
         return EXIT_FAILURE;
     }
 
-    if (config->validate_realization_enabled) {
+    if (config->validate_realizations_enabled) {
         if (!config->generate_porosity_realizations_enabled) {
             fprintf(stderr,
                     "VALIDATE_REALIZATIONS = YES requires GENERATE_POROSITY_REALIZATIONS = YES\n");

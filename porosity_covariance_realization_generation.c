@@ -1362,11 +1362,16 @@ static int write_gaussian_realizations_impl(
     const PorosityRealizationGridSpec *simulation_grid,
     PorosityRealizationMethod realization_method,
     uint32_t realization_count,
-    unsigned int base_seed
+    unsigned int base_seed,
+    const PorosityValidationRequest *validation
 ) {
     uint32_t i;
     char *diagnostics_path = NULL;
     FILE *diagnostics_file = NULL;
+    FieldValidationMetrics data_metrics = {0};
+    double data_block_spacing = 0.0;
+    EnsembleValidationAccumulator ensemble = {0};
+    int validation_enabled = validation != NULL && validation->enabled;
 
     if (stack_path == NULL || gen_model == NULL || simulation_grid == NULL ||
         realization_count == 0U) {
@@ -1392,6 +1397,29 @@ static int write_gaussian_realizations_impl(
         fclose(diagnostics_file);
         free(diagnostics_path);
         return EXIT_FAILURE;
+    }
+
+    if (validation_enabled) {
+        if (compute_data_field_validation_metrics(
+                stack_path,
+                validation->voxel_resolution,
+                validation->filter_resolution,
+                validation->requested_max_lag,
+                &data_metrics,
+                &data_block_spacing) != EXIT_SUCCESS) {
+            fclose(diagnostics_file);
+            free(diagnostics_path);
+            return EXIT_FAILURE;
+        }
+        if (ensemble_validation_accumulator_init(
+                &ensemble, data_metrics.max_lag, data_metrics.nz) != EXIT_SUCCESS) {
+            free_field_validation_metrics(&data_metrics);
+            fclose(diagnostics_file);
+            free(diagnostics_path);
+            return EXIT_FAILURE;
+        }
+        warn_if_validation_grids_differ(
+            &data_metrics, data_block_spacing, simulation_grid, diagnostics_file);
     }
 
     for (i = 0U; i < realization_count; ++i) {
@@ -1522,7 +1550,8 @@ int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
                         const PorosityRealizationGridSpec *simulation_grid,
                         PorosityRealizationMethod realization_method,
                         uint32_t realization_count,
-                        unsigned int base_seed
+                        unsigned int base_seed,
+                        const PorosityValidationRequest *validation
                     ) {
         NormalScoreTable score_table = {0U, NULL};
     ExponentialCovarianceModel generation_model;
@@ -1537,7 +1566,8 @@ int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
         /* Original behavior: sample porosity directly. */
         return write_gaussian_realizations_impl(
             stack_path, &model->exponential_model, model->mean_porosity, NULL,
-            simulation_grid, realization_method, realization_count, base_seed);
+            simulation_grid, realization_method, realization_count, base_seed,
+            validation);
     }
 
     /*
@@ -1565,7 +1595,7 @@ int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
 
     status = write_gaussian_realizations_impl(
         stack_path, &generation_model, 0.0, &score_table, simulation_grid,
-        realization_method, realization_count, base_seed);
+        realization_method, realization_count, base_seed, validation);
 
     free_normal_score_table(&score_table);
     return status;
