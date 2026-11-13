@@ -1,0 +1,2 @@
+realization mean variance min_value max_value count_below_zero count_above_one total_count fraction_outside_0_1
+1 0.912923162541 0.009173673249 0.489885946498 1.339337603719 0 16559 92928 0.178191718320

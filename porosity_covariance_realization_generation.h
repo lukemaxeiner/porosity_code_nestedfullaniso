@@ -3,7 +3,6 @@
 #include "input.h"
 #include "porosity_covariance_realization_prep.h"
 #include "porosity_field.h"
-#include "porosity_validation.h"
 
 int generate_gaussian_porosity_realization_from_model(
     const ExponentialCovarianceModel *model,
@@ -36,7 +35,6 @@ int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
     const PorosityRealizationGridSpec *simulation_grid,
     PorosityRealizationMethod realization_method,
     uint32_t realization_count,
-    unsigned int base_seed,
-    const PorosityValidationRequest *validation);
+    unsigned int base_seed);
 
 #endif

@@ -6,7 +6,6 @@
 #include <sys/stat.h>
 
 #include "porosity_covariance_lag.h"
-#include "porosity_normal_score.h"
 #include "tiff.h"
 
 static uint64_t porosity_field_index(uint32_t wx, uint32_t wy, uint32_t wz,
@@ -422,8 +421,7 @@ int process_porosity_covariance_lag(const char *stack_path,
                                     double voxel_resolution,
                                     double filter_resolution,
                                     PorosityLagMode lag_mode,
-                                    PorosityAxis axis, 
-                                    int normal_score_enabled, FILE *out) {
+                                    PorosityAxis axis, FILE *out) {
     BinaryVolume volume;
     PorosityField field;
     PorosityCovarianceSample *samples = NULL;
@@ -470,30 +468,6 @@ int process_porosity_covariance_lag(const char *stack_path,
         free_porosity_field(&field);
         free_binary_volume(&volume);
         return EXIT_FAILURE;
-    }
-
-    //optional normal-score transform
-    if (normal_score_enabled){
-        NormalScoreTable table = {0U, NULL};
-        char *table_path = build_normal_score_table_path(stack_path);
-        int ok = table_path != NULL && 
-        normal_score_transform_field(&field, &table) == EXIT_SUCCESS &&
-        write_normal_score_table(table_path, &table) == EXIT_SUCCESS;
-
-        if (ok) {
-            fprintf(out, "Normal-score transform: %s\nTable: %s\n",
-                stack_path, table_path);
-        } else {
-            fprintf(stderr, "Failed to apply normal-score transform for %s\n",
-                stack_path);
-        }
-        free_normal_score_table(&table);
-        free(table_path);
-        if (!ok) {
-            free_porosity_field(&field);
-            free_binary_volume(&volume);
-            return EXIT_FAILURE;
-        }
     }
 
     output_path = build_covariance_lag_output_path(stack_path, lag_mode, axis,

@@ -1,21 +1,21 @@
 Exponential Fit Quality
   Model type: nested fully anisotropic exponential
-  Sill: 0.952862886921
-  Legacy X correlation length: 226.848066440236
-  Legacy Y correlation length: 341.893059571308
-  Legacy Z correlation length: 295.010366292616
-  Component 1 weight: 0.900000000000
-  Component 1 X/Y/Z lengths: 54.443535945657 82.054334297114 70.802487910228
-  Component 2 weight: 0.100000000000
-  Component 2 X/Y/Z lengths: 226.848066440236 341.893059571308 295.010366292616
-  RMS error: 0.067767996388
-  Weighted RMS error: 0.033173362176
-  Directional RMS x/y/z: 0.032887673251 0.026965593954 0.021424909028
-  Small-lag RMS error: 0.033397586826
-  Recommended-radius RMS error: 0.065740479960
-  AIC: -436808.966060332838
-  BIC: -436734.534215268388
-  Fit sample count: 72
+  Sill: 0.009099932911
+  Legacy X correlation length: 643.034521260213
+  Legacy Y correlation length: 1068.552772141714
+  Legacy Z correlation length: 918.990647127991
+  Component 1 weight: 0.950000000000
+  Component 1 X/Y/Z lengths: 48.227589094516 80.141457910629 68.924298534599
+  Component 2 weight: 0.050000000000
+  Component 2 X/Y/Z lengths: 643.034521260213 1068.552772141714 918.990647127991
+  RMS error: 0.000616868204
+  Weighted RMS error: 0.000272991258
+  Directional RMS x/y/z: 0.000303501405 0.000177449421 0.000182892311
+  Small-lag RMS error: 0.000252579380
+  Recommended-radius RMS error: 0.000593847401
+  AIC: -1199431.103056746768
+  BIC: -1199356.671211682260
+  Fit sample count: 71
   Fit valid: YES
   Zero-lag relative error: 0.000000000000
-  RMS error ratio: 0.034814413103
+  RMS error ratio: 0.029999260504

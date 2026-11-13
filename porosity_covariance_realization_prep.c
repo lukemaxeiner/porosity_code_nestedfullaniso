@@ -11,7 +11,6 @@
 #include "porosity_covariance_realization_generation.h"
 #include "porosity_covariance_tail_noise.h"
 #include "porosity_field.h"
-#include "porosity_normal_score.h"
 #include "tiff.h"
 
 static size_t covariance_grid_index(uint32_t x, uint32_t y, uint32_t z,
@@ -159,14 +158,9 @@ static char *build_fitted_model_path(const char *stack_path) {
         stack_path, "_fitted_covariance_model.txt");
 }
 
-//rebuilds the block porosity field from the tiff and returns its variance
-//if normal_score_enabled, the field is rank-transformed first so the variance
-//matches the field of the 3DLAG table
 static double compute_porosity_field_variance_from_stack(const char *stack_path,
                                                          double voxel_resolution,
-                                                         double filter_resolution,
-                                                         int normal_score_enabled,
-                                                         double *mean_out) {
+                                                         double filter_resolution) {
     BinaryVolume volume;
     PorosityField field;
     uint64_t count = 0U;
@@ -192,13 +186,6 @@ static double compute_porosity_field_variance_from_stack(const char *stack_path,
         return -1.0;
     }
 
-    if (normal_score_enabled &&
-        normal_score_transform_field(&field, NULL) != EXIT_SUCCESS){
-            free_porosity_field(&field);
-            free_binary_volume(&volume);
-            return -1.0;
-    }
-
     for (uint32_t z = 0; z < field.depth; ++z) {
         for (uint32_t y = 0; y < field.height; ++y) {
             for (uint32_t x = 0; x < field.width; ++x) {
@@ -212,10 +199,6 @@ static double compute_porosity_field_variance_from_stack(const char *stack_path,
 
     if (count > 0U) {
         mean /= (double)count;
-    }
-
-    if (mean_out != NULL) {
-        *mean_out = mean;
     }
 
     for (uint32_t z = 0; z < field.depth; ++z) {
@@ -1484,16 +1467,12 @@ int write_fitted_covariance_model(FILE *out,
 
     if (fprintf(out,
                 "MODEL_TYPE = %s\n"
-                "NORMAL_SCORE_TRANSFORM = %d\n"
-                "MODELED_FIELD = %s\n"
                 "MEAN_POROSITY = %.17g\n"
                 "VARIANCE = %.17g\n"
                 "FILTER_RESOLUTION = %.17g\n"
                 "SILL = %.17g\n"
                 "COMPONENT_COUNT = %u\n",
                 model_type_name,
-                model->normal_score_transform ? 1 : 0,
-                model->normal_score_transform ? "NORMAL_SCORE" : "POROSITY",
                 model->mean_porosity,
                 model->variance,
                 model->filter_resolution,
@@ -1612,8 +1591,6 @@ int read_fitted_covariance_model(const char *model_path,
         } else if (strstr(line, "MODEL_TYPE = FULLY_ANISOTROPIC_EXPONENTIAL") != NULL) {
             model_out->exponential_model.model_type =
                 POROSITY_COVARIANCE_MODEL_FULLY_ANISOTROPIC_EXPONENTIAL;
-        } else if (sscanf(line, "NORMAL_SCORE_TRANSFORM = %d", &int_value) == 1){
-            model_out->normal_score_transform = int_value != 0;
         } else if (sscanf(line, "MEAN_POROSITY = %lf", &value) == 1) {
             model_out->mean_porosity = value;
             seen_mean = 1;
@@ -2193,7 +2170,7 @@ int process_realization_prep_from_stack(
     }
 
     variance = compute_porosity_field_variance_from_stack(
-        stack_path, voxel_resolution, filter_resolution, 0, NULL);
+        stack_path, voxel_resolution, filter_resolution);
     if (variance < 0.0) {
         fprintf(stderr, "Failed to compute porosity-field variance for %s\n",
                 stack_path);
@@ -2386,9 +2363,7 @@ int process_realization_prep_from_stack(
 
 int process_realization_fit_from_stack(
     const char *stack_path, double voxel_resolution, double filter_resolution,
-    const PorosityRealizationGridSpec *simulation_grid, 
-    int normal_score_enabled, FILE *out) {
-    double field_mean = 0.0;
+    const PorosityRealizationGridSpec *simulation_grid, FILE *out) {
     PorosityRealizationPrepResult result;
     char *table_path = NULL;
     char *tail_report_path = NULL;
@@ -2408,8 +2383,7 @@ int process_realization_fit_from_stack(
     }
 
     variance = compute_porosity_field_variance_from_stack(
-        stack_path, voxel_resolution, filter_resolution, normal_score_enabled,
-        &field_mean);
+        stack_path, voxel_resolution, filter_resolution);
     if (variance < 0.0) {
         fprintf(stderr, "Failed to compute porosity-field variance for %s\n",
                 stack_path);
@@ -2454,26 +2428,6 @@ int process_realization_fit_from_stack(
         free(fit_report_path);
         free(model_path);
         free(summary_report_path);
-        return EXIT_FAILURE;
-    }
-
-    //3D LAG table stores mean of input data set, it it doesn't match rebuild,
-    //it came from different settings i.e theres an error
-    if (fabs(result.covariance_grid.mean - field_mean) >
-        1.0e-6 * (1.0 + fabs(field_mean))) {
-        fprintf(stderr,
-                "3DLAG table mean (%.9f) does not match the current field "
-                "mean (%.9f) for %s.\n"
-                "Rerun EMPIRICAL_COVARIANCE with the same "
-                "NORMAL_SCORE_TRANSFORM and FILTER_RESOLUTION settings.\n",
-                result.covariance_grid.mean, field_mean, stack_path);
-        free_realization_prep_result(&result);
-        free(table_path);
-        free(tail_report_path);
-        free(fit_report_path);
-        free(model_path);
-        free(summary_report_path);
-        free(directional_fit_path);
         return EXIT_FAILURE;
     }
 
@@ -2549,7 +2503,6 @@ int process_realization_fit_from_stack(
         memset(&model_artifact, 0, sizeof(model_artifact));
         model_artifact.mean_porosity = result.covariance_grid.mean;
         model_artifact.variance = result.variance;
-        model_artifact.normal_score_transform = normal_score_enabled ? 1 : 0;
         model_artifact.filter_resolution = result.filter_resolution;
         model_artifact.exponential_model = result.exponential_model;
         model_artifact.exponential_validation = result.exponential_validation;

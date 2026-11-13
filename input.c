@@ -325,7 +325,6 @@ int parse_input(int argc, char **argv, RunConfig *config) {
     int realization_grid_res_seen = 0;
     int realization_grid_dim_seen = 0;
     int ref_window_values_seen = 0;
-    int validation_max_lag_seen = 0; //realization validation
 
     if (config == NULL) {
         return EXIT_FAILURE;
@@ -345,9 +344,6 @@ int parse_input(int argc, char **argv, RunConfig *config) {
                 "  FIT_COVARIANCE_MODEL = YES|NO\n"
                 "  GENERATE_POROSITY_REALIZATIONS = YES|NO\n"
                 "  POROSITY_REALIZATION_METHOD = CHOLESKY|FFT\n"
-                "  NORMAL_SCORE_TRANSFORM = YES|NO\n"
-                "  VALIDATE_REALIZATIONS = YES|NO\n"
-                "  VALIDATION_MAX_LAG = <N> (0 = automatic)\n"
                 "  GLOBAL_POROSITY = YES|NO\n"
                 "  POROSITY_FIELD = YES|NO\n"
                 "  FILTER_RESOLUTION = <value>\n"
@@ -444,32 +440,6 @@ int parse_input(int argc, char **argv, RunConfig *config) {
                 release_batch(&config->input_data);
                 return EXIT_FAILURE;
             }
-        } else if (equals_ignore_case(key, "NORMAL_SCORE_TRANSFORM")){
-            if(parse_yes_no(value, &config->normal_score_transform_enabled) != EXIT_SUCCESS){
-                fprintf(stderr,
-                    "Invalid NORMAL_SCORE_TRANSFORM value. Expected YES or NO\n");
-                    fclose(input_file);
-                    release_batch(&config->input_data);
-                    return EXIT_FAILURE;
-            }
-        } else if (equals_ignore_case(key, "VALIDATE_REALIZATIONS")) {
-            if (parse_yes_no(value, &config->validate_realizations_enabled) !=
-                EXIT_SUCCESS) {
-                fprintf(stderr,
-                        "Invalid VALIDATE_REALIZATIONS value. Expected YES or NO\n");
-                fclose(input_file);
-                release_batch(&config->input_data);
-                return EXIT_FAILURE;
-            }
-        } else if (equals_ignore_case(key, "VALIDATION_MAX_LAG")) {
-            if (sscanf(value, " %d", &config->validation_max_lag) != 1) {
-                fprintf(stderr,
-                        "Invalid VALIDATION_MAX_LAG. Expected: <N>\n");
-                fclose(input_file);
-                release_batch(&config->input_data);
-                return EXIT_FAILURE;
-            }
-            validation_max_lag_seen = 1;
         } else if (equals_ignore_case(key, "GLOBAL_POROSITY")) {
             if (parse_yes_no(value, &config->global_porosity_enabled) !=
                 EXIT_SUCCESS) {
@@ -691,30 +661,6 @@ int parse_input(int argc, char **argv, RunConfig *config) {
                 "POROSITY_AXIS is required when POROSITY_COVARIANCE_LAG = CURVE\n");
         release_batch(&config->input_data);
         return EXIT_FAILURE;
-    }
-
-    if (config->validate_realizations_enabled) {
-        if (!config->generate_porosity_realizations_enabled) {
-            fprintf(stderr,
-                    "VALIDATE_REALIZATIONS = YES requires GENERATE_POROSITY_REALIZATIONS = YES\n");
-            release_batch(&config->input_data);
-            return EXIT_FAILURE;
-        }
-        if (config->porosity_realization_count < 2) {
-            fprintf(stderr,
-                    "VALIDATE_REALIZATIONS = YES requires POROSITY_REALIZATION_COUNT >= 2 "
-                    "(10 or more recommended)\n");
-            release_batch(&config->input_data);
-            return EXIT_FAILURE;
-        }
-        if (config->validation_max_lag < 0) {
-            fprintf(stderr, "VALIDATION_MAX_LAG must be 0 (automatic) or positive\n");
-            release_batch(&config->input_data);
-            return EXIT_FAILURE;
-        }
-    } else if (validation_max_lag_seen) {
-        fprintf(stderr,
-                "Warning: VALIDATION_MAX_LAG is ignored because VALIDATE_REALIZATIONS = NO\n");
     }
 
     if (config->porosity_ref_window_enabled && !ref_window_values_seen) {

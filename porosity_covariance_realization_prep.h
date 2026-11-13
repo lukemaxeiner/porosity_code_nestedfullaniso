@@ -178,7 +178,6 @@ typedef struct {
 typedef struct {
     double mean_porosity;
     double variance;
-    int normal_score_transform;
     double filter_resolution;
     ExponentialCovarianceModel exponential_model;
     ExponentialCovarianceValidation exponential_validation;
@@ -255,7 +254,6 @@ int read_fitted_covariance_model(const char *model_path,
 
 int process_realization_fit_from_stack(
     const char *stack_path, double voxel_resolution, double filter_resolution,
-    const PorosityRealizationGridSpec *simulation_grid, 
-    int normal_score_enabled, FILE *out);
+    const PorosityRealizationGridSpec *simulation_grid, FILE *out);
 
 #endif

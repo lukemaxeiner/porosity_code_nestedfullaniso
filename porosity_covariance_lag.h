@@ -43,7 +43,6 @@ int process_porosity_covariance_lag(const char *stack_path,
                                     double voxel_resolution,
                                     double filter_resolution,
                                     PorosityLagMode lag_mode,
-                                    PorosityAxis axis, 
-                                    int normal_score_enabled, FILE *out);
+                                    PorosityAxis axis, FILE *out);
 
 #endif

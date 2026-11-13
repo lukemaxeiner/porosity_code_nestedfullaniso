@@ -7,7 +7,6 @@
 #include <sys/stat.h>
 
 #include "porosity_covariance_realization_generation.h"
-#include "porosity_normal_score.h"
 #define MAX_CHOLESKY_POINTS 4096U
 #define MAX_FFT_EMBEDDED_POINTS 16777216U
 
@@ -1347,33 +1346,19 @@ int generate_and_write_gaussian_porosity_realizations_from_model(
 
     return EXIT_SUCCESS;
 }
-/*
- * Generates, (optionally) back-transforms, and writes realizations.
- * gen_model/gen_mean describe the Gaussian field actually sampled.
- * score_table == NULL : the sampled field already is porosity.
- * score_table != NULL : the sampled field is normal scores; each value is
- *                       mapped back to porosity before diagnostics/output.
- */
-static int write_gaussian_realizations_impl(
+int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
     const char *stack_path,
-    const ExponentialCovarianceModel *gen_model,
-    double gen_mean,
-    const NormalScoreTable *score_table,
+    const FittedCovarianceModelArtifact *model,
     const PorosityRealizationGridSpec *simulation_grid,
     PorosityRealizationMethod realization_method,
     uint32_t realization_count,
-    unsigned int base_seed,
-    const PorosityValidationRequest *validation
+    unsigned int base_seed
 ) {
     uint32_t i;
     char *diagnostics_path = NULL;
     FILE *diagnostics_file = NULL;
-    FieldValidationMetrics data_metrics = {0};
-    double data_block_spacing = 0.0;
-    EnsembleValidationAccumulator ensemble = {0};
-    int validation_enabled = validation != NULL && validation->enabled;
 
-    if (stack_path == NULL || gen_model == NULL || simulation_grid == NULL ||
+    if (stack_path == NULL || model == NULL || simulation_grid == NULL ||
         realization_count == 0U) {
         return EXIT_FAILURE;
     }
@@ -1399,29 +1384,6 @@ static int write_gaussian_realizations_impl(
         return EXIT_FAILURE;
     }
 
-    if (validation_enabled) {
-        if (compute_data_field_validation_metrics(
-                stack_path,
-                validation->voxel_resolution,
-                validation->filter_resolution,
-                validation->requested_max_lag,
-                &data_metrics,
-                &data_block_spacing) != EXIT_SUCCESS) {
-            fclose(diagnostics_file);
-            free(diagnostics_path);
-            return EXIT_FAILURE;
-        }
-        if (ensemble_validation_accumulator_init(
-                &ensemble, data_metrics.max_lag, data_metrics.nz) != EXIT_SUCCESS) {
-            free_field_validation_metrics(&data_metrics);
-            fclose(diagnostics_file);
-            free(diagnostics_path);
-            return EXIT_FAILURE;
-        }
-        warn_if_validation_grids_differ(
-            &data_metrics, data_block_spacing, simulation_grid, diagnostics_file);
-    }
-
     for (i = 0U; i < realization_count; ++i) {
         PorosityField field;
         char *tiff_output_path;
@@ -1441,8 +1403,8 @@ static int write_gaussian_realizations_impl(
 
         if (realization_method == POROSITY_REALIZATION_METHOD_CHOLESKY) {
             if (generate_gaussian_porosity_realization_from_model(
-                    gen_model, simulation_grid,
-                    gen_mean, base_seed + i, &field) !=
+                    &model->exponential_model, simulation_grid,
+                    model->mean_porosity, base_seed + i, &field) !=
                 EXIT_SUCCESS) {
                 free(tiff_output_path);
                 free(vtk_output_path);
@@ -1453,8 +1415,8 @@ static int write_gaussian_realizations_impl(
             }
         } else if (realization_method == POROSITY_REALIZATION_METHOD_FFT) {
             if (generate_gaussian_porosity_realization_from_model_fft(
-                    gen_model, simulation_grid,
-                    gen_mean, base_seed + i, &field) !=
+                    &model->exponential_model, simulation_grid,
+                    model->mean_porosity, base_seed + i, &field) !=
                 EXIT_SUCCESS) {
                 free(tiff_output_path);
                 free(vtk_output_path);
@@ -1470,21 +1432,7 @@ static int write_gaussian_realizations_impl(
             fclose(diagnostics_file);
             free(diagnostics_path);
             return EXIT_FAILURE;
-            
         }
-        //Map every cell back to porosity through the data's sorted values so
-        //units are consistent
-        if (score_table != NULL &&
-            normal_score_back_transform_field(&field, score_table) !=
-                EXIT_SUCCESS) {
-            free(tiff_output_path);
-            free(vtk_output_path);
-            free_porosity_field_storage(&field);
-            fclose(diagnostics_file);
-            free(diagnostics_path);
-            return EXIT_FAILURE;
-        }
-
 
         {
             PorosityGenerationDiagnostics diagnostics;
@@ -1542,61 +1490,4 @@ static int write_gaussian_realizations_impl(
     fclose(diagnostics_file);
     free(diagnostics_path);
     return EXIT_SUCCESS;
-}
-
-int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
-                        const char *stack_path,
-                        const FittedCovarianceModelArtifact *model,
-                        const PorosityRealizationGridSpec *simulation_grid,
-                        PorosityRealizationMethod realization_method,
-                        uint32_t realization_count,
-                        unsigned int base_seed,
-                        const PorosityValidationRequest *validation
-                    ) {
-        NormalScoreTable score_table = {0U, NULL};
-    ExponentialCovarianceModel generation_model;
-    char *table_path;
-    int status;
-
-    if (stack_path == NULL || model == NULL) {
-        return EXIT_FAILURE;
-    }
-
-    if (!model->normal_score_transform) {
-        /* Original behavior: sample porosity directly. */
-        return write_gaussian_realizations_impl(
-            stack_path, &model->exponential_model, model->mean_porosity, NULL,
-            simulation_grid, realization_method, realization_count, base_seed,
-            validation);
-    }
-
-    /*
-     * The model was fit to normal scores. The back-transform
-     *     phi = F_data^-1( Phi(y) )
-     * assumes y is STANDARD normal: mean 0, variance 1. The fitted sill is the
-     * empirical score variance, which sits slightly below 1 when porosity
-     * values are tied (tied blocks share one score), so keep only the SHAPE of
-     * the fit, the correlation C(r)/C(0), and sample with mean 0, sill 1.
-     */
-    generation_model = model->exponential_model;
-    generation_model.sill = 1.0;
-
-    table_path = build_normal_score_table_path(stack_path);
-    if (table_path == NULL ||
-        read_normal_score_table(table_path, &score_table) != EXIT_SUCCESS) {
-        fprintf(stderr,
-                "Model was fit with NORMAL_SCORE_TRANSFORM but the lookup table "
-                "could not be read: %s\n",
-                table_path != NULL ? table_path : "(path error)");
-        free(table_path);
-        return EXIT_FAILURE;
-    }
-    free(table_path);
-
-    status = write_gaussian_realizations_impl(
-        stack_path, &generation_model, 0.0, &score_table, simulation_grid,
-        realization_method, realization_count, base_seed, validation);
-
-    free_normal_score_table(&score_table);
-    return status;
 }

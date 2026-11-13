@@ -1,27 +1,27 @@
 Realization Prep Report
   Lag grid: 42 x 42 x 46
   Filter resolution: 50.000000000000
-  Variance: 0.952862886921
-  Mean: -0.009356575994
+  Variance: 0.009099932911
+  Mean: 0.901043464064
   Tail noisy: YES
   Tail noise fraction: 0.083333333333
   Recommended max radius: 3440.446180639221
   Negative lobes: YES
-  Negative count: 33504
-  Min covariance: -1.246962948456
-  X/Y/Z e-fold distances: 62.727251981636 95.939046977377 86.405013483906
-  Anisotropy ratio: 1.529463573591
+  Negative count: 33778
+  Min covariance: -0.013202370212
+  X/Y/Z e-fold distances: 56.502022251331 90.118561973524 81.665682859326
+  Anisotropy ratio: 1.594961709028
   Exponential model type: nested fully anisotropic exponential
-  Exponential sill: 0.952862886921
-  Legacy X/Y/Z correlation lengths: 226.848066440236 341.893059571308 295.010366292616
-  Exponential RMS error: 0.067767996388
+  Exponential sill: 0.009099932911
+  Legacy X/Y/Z correlation lengths: 643.034521260213 1068.552772141714 918.990647127991
+  Exponential RMS error: 0.000616868204
   Exponential fit valid: YES
   Simulation grid: 44 x 44 x 48
   Simulation dimensions: 2200.000000000000 2200.000000000000 2400.000000000000
-  Domain/correlation-length ratios: 9.698121013430 6.434760631756 8.135307345842
-  Simulation grid adequate: YES
+  Domain/correlation-length ratios: 3.421278216430 2.058859475504 2.611560854836
+  Simulation grid adequate: NO
   Evaluated covariance grid valid: YES
-  Component 1 weight: 0.900000000000
-  Component 1 X/Y/Z lengths: 54.443535945657 82.054334297114 70.802487910228
-  Component 2 weight: 0.100000000000
-  Component 2 X/Y/Z lengths: 226.848066440236 341.893059571308 295.010366292616
+  Component 1 weight: 0.950000000000
+  Component 1 X/Y/Z lengths: 48.227589094516 80.141457910629 68.924298534599
+  Component 2 weight: 0.050000000000
+  Component 2 X/Y/Z lengths: 643.034521260213 1068.552772141714 918.990647127991
