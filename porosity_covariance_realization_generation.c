@@ -819,6 +819,17 @@ static void multiply_lower_by_vector(const double *lower, const double *vector,
     }
 }
 
+// This function clamps the porosity values generated to the range [0,1]
+static double clamp_porosity_value(double value) {
+    if (value < 0.0) {
+        return 0.0;
+    } else if (value > 1.0) {
+        return 1.0;
+    } else {
+        return value;
+    }
+}
+
 int generate_gaussian_porosity_realization_from_model(
     const ExponentialCovarianceModel *model,
     const PorosityRealizationGridSpec *simulation_grid, double mean_porosity,
@@ -889,7 +900,7 @@ int generate_gaussian_porosity_realization_from_model(
                              correlated);
 
     for (i = 0; i < point_count; ++i) {
-        field_out->values[i] = mean_porosity + correlated[i];
+        field_out->values[i] = clamp_porosity_value(mean_porosity + correlated[i]);
     }
 
     field_out->width = simulation_grid->nx;
@@ -1084,7 +1095,7 @@ int generate_gaussian_porosity_realization_from_model_fft(
                     embedded_index(x, y, z, embed_nx, embed_ny);
 
                 field_out->values[output_index] =
-                    mean_porosity + white_noise[source_index].real;
+                    clamp_porosity_value(mean_porosity + white_noise[source_index].real);
             }
         }
     }
@@ -1491,3 +1502,8 @@ int generate_and_write_gaussian_porosity_realizations_from_model_with_method(
     free(diagnostics_path);
     return EXIT_SUCCESS;
 }
+
+
+
+
+
